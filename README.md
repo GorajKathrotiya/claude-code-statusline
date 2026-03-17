@@ -46,25 +46,27 @@ main (3) | claude-sonnet-4-6 | [███░░░░░░░] 34% (68k/200k) |
 
 ## Installation
 
-### Option A — Claude Skill (recommended, 2 steps)
+### Option A — Claude Skill (recommended)
 
-1. Build the skill from source:
-   ```bash
-   git clone https://github.com/GorajKathrotiya/claude-code-statusline.git
-   cd claude-code-statusline
-   make build
-   ```
+**Via skill directory (no build needed):**
+```bash
+git clone https://github.com/GorajKathrotiya/claude-code-statusline.git
+claude skills install ./claude-code-statusline/skill
+```
 
-2. Install:
-   ```bash
-   claude skills install ./statusline.skill
-   ```
+**Or build the `.skill` file first:**
+```bash
+git clone https://github.com/GorajKathrotiya/claude-code-statusline.git
+cd claude-code-statusline
+make build
+claude skills install ./statusline.skill
+```
 
-3. Open Claude Code and type:
-   ```
-   /statusline
-   ```
-   Claude will copy the script, make it executable, and update your `settings.json` automatically.
+Then open Claude Code and type:
+```
+/statusline
+```
+Claude will copy the script, make it executable, and update your `settings.json` automatically.
 
 ---
 
