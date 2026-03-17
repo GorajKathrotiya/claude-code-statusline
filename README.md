@@ -48,11 +48,16 @@ main (3) | claude-sonnet-4-6 | [███░░░░░░░] 34% (68k/200k) |
 
 ### Option A — Claude Skill (recommended, 2 steps)
 
-1. Download [`statusline.skill`](https://github.com/GorajKathrotiya/claude-code-statusline/releases/latest) from Releases
+1. Build the skill from source:
+   ```bash
+   git clone https://github.com/GorajKathrotiya/claude-code-statusline.git
+   cd claude-code-statusline
+   make build
+   ```
 
 2. Install:
    ```bash
-   claude skills install ~/Downloads/statusline.skill
+   claude skills install ./statusline.skill
    ```
 
 3. Open Claude Code and type:
