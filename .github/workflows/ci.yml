@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+      - name: Lint statusline-command.sh
+        run: shellcheck -s sh statusline-command.sh
+      - name: Lint skill asset
+        run: shellcheck -s sh skill/assets/statusline-command.sh
+
+  scripts-in-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check root and skill asset are identical
+        run: |
+          if ! diff -q statusline-command.sh skill/assets/statusline-command.sh; then
+            echo "❌ statusline-command.sh and skill/assets/statusline-command.sh are out of sync"
+            diff statusline-command.sh skill/assets/statusline-command.sh
+            exit 1
+          fi
+          echo "✅ Scripts are in sync"

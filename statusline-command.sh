@@ -1,7 +1,10 @@
 #!/bin/sh
 input=$(cat)
 
-# Colors — use printf to produce real ESC bytes so they work in any context
+# Exit early if input is empty or not valid JSON
+echo "$input" | jq empty 2>/dev/null || exit 0
+
+# Colors — real ESC bytes via printf, safe in any output context
 cyan=$(printf '\033[36m')
 yellow=$(printf '\033[33m')
 green=$(printf '\033[32m')
@@ -15,7 +18,6 @@ CACHE_FILE="$HOME/.claude/.usage_cache.json"
 CACHE_TTL=180  # seconds
 
 _fetch_usage() {
-  # Check cache freshness
   if [ -f "$CACHE_FILE" ]; then
     cache_mtime=$(stat -f %m "$CACHE_FILE" 2>/dev/null || echo 0)
     now=$(date +%s)
@@ -26,12 +28,10 @@ _fetch_usage() {
     fi
   fi
 
-  # Get OAuth access token from macOS keychain
   token=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
     | jq -r '.claudeAiOauth.accessToken // .accessToken // empty' 2>/dev/null)
 
   if [ -z "$token" ]; then
-    # Fall back to stale cache if present rather than showing nothing
     [ -f "$CACHE_FILE" ] && cat "$CACHE_FILE"
     return 1
   fi
@@ -42,10 +42,10 @@ _fetch_usage() {
     "https://api.anthropic.com/api/oauth/usage" 2>/dev/null)
 
   if [ -n "$result" ]; then
+    mkdir -p "$(dirname "$CACHE_FILE")"
     echo "$result" > "$CACHE_FILE"
     echo "$result"
   else
-    # Return stale cache on failure
     [ -f "$CACHE_FILE" ] && cat "$CACHE_FILE"
   fi
 }
@@ -55,14 +55,11 @@ usage_data=$(_fetch_usage 2>/dev/null)
 session_pct=""
 weekly_pct=""
 session_reset_part=""
-weekly_reset_part=""
 
 if [ -n "$usage_data" ]; then
-  # Utilization comes as 0–1 float from the API
   session_raw=$(echo "$usage_data" | jq -r '.five_hour.utilization // empty')
   weekly_raw=$(echo "$usage_data"  | jq -r '.seven_day.utilization // empty')
   session_reset_at=$(echo "$usage_data" | jq -r '.five_hour.resets_at // empty')
-  weekly_reset_at=$(echo "$usage_data"  | jq -r '.seven_day.resets_at // empty')
 
   if [ -n "$session_raw" ]; then
     session_pct=$(echo "$session_raw" | awk '{v=$1+0; if(v>100)v=100; printf "%.1f", v}')
@@ -71,12 +68,15 @@ if [ -n "$usage_data" ]; then
     weekly_pct=$(echo "$weekly_raw" | awk '{v=$1+0; if(v>100)v=100; printf "%.1f", v}')
   fi
 
-  # Format reset countdown  (macOS date)
+  # Format reset countdown (macOS date)
   _fmt_reset() {
     ts="$1"
     [ -z "$ts" ] && return
-    # Strip sub-seconds, normalize +HH:MM → +HHMM for macOS date
-    ts_clean=$(echo "$ts" | sed 's/\.[0-9]*//' | sed 's/+\([0-9][0-9]\):\([0-9][0-9]\)$/+\1\2/' | sed 's/Z$/+0000/')
+    # Strip sub-seconds, normalize +HH:MM → +HHMM for macOS date -j
+    ts_clean=$(echo "$ts" \
+      | sed 's/\.[0-9]*//' \
+      | sed 's/+\([0-9][0-9]\):\([0-9][0-9]\)$/+\1\2/' \
+      | sed 's/Z$/+0000/')
     reset_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S%z" "$ts_clean" +%s 2>/dev/null)
     [ -z "$reset_epoch" ] && return
     now_epoch=$(date +%s)
@@ -84,19 +84,10 @@ if [ -n "$usage_data" ]; then
     [ "$diff" -le 0 ] && echo "soon" && return
     hrs=$(( diff / 3600 ))
     mins=$(( (diff % 3600) / 60 ))
-    if [ "$hrs" -gt 0 ]; then
-      echo "${hrs}h${mins}m"
-    else
-      echo "${mins}m"
-    fi
+    [ "$hrs" -gt 0 ] && echo "${hrs}h${mins}m" || echo "${mins}m"
   }
 
-  if [ -n "$session_reset_at" ]; then
-    session_reset_part=$(_fmt_reset "$session_reset_at")
-  fi
-  if [ -n "$weekly_reset_at" ]; then
-    weekly_reset_part=$(_fmt_reset "$weekly_reset_at")
-  fi
+  [ -n "$session_reset_at" ] && session_reset_part=$(_fmt_reset "$session_reset_at")
 fi
 
 # ── Model name ───────────────────────────────────────────────────────────────
@@ -104,7 +95,8 @@ model=$(echo "$input" | jq -r '.model.display_name // "Unknown Model"')
 
 # ── Git branch + change count ────────────────────────────────────────────────
 cwd=$(echo "$input" | jq -r '.cwd // empty')
-if [ -n "$cwd" ]; then
+branch=""
+if [ -n "$cwd" ] && [ -d "$cwd" ]; then
   branch=$(git -C "$cwd" --no-optional-locks symbolic-ref --short HEAD 2>/dev/null)
   change_count=$(git -C "$cwd" --no-optional-locks status --porcelain 2>/dev/null | wc -l | tr -d ' ')
 fi
@@ -119,24 +111,23 @@ else
 fi
 
 # ── Context window ───────────────────────────────────────────────────────────
-used=$(echo "$input"         | jq -r '.context_window.used_percentage // empty')
-input_tokens=$(echo "$input" | jq -r '.context_window.current_usage.input_tokens // empty')
-window_size=$(echo "$input"  | jq -r '.context_window.context_window_size // empty')
+used=$(echo "$input"        | jq -r '.context_window.used_percentage // empty')
+window_size=$(echo "$input" | jq -r '.context_window.context_window_size // empty')
 
 model_part="${cyan}${model}${reset}"
 
-# ── Context bar ──────────────────────────────────────────────────────────────
+# ── Context bar (thresholds: <50 green, <80 yellow, ≥80 red) ────────────────
 if [ -z "$used" ]; then
-  ctx_part="[----------] -%%"
+  ctx_part="[----------] -%"
 else
   used_int=$(printf "%.0f" "$used")
 
-  if [ "$used_int" -lt 40 ]; then
-    bar_color="\033[32m"
-  elif [ "$used_int" -le 60 ]; then
-    bar_color="\033[33m"
+  if [ "$used_int" -lt 50 ]; then
+    bar_color=$(printf '\033[32m')
+  elif [ "$used_int" -lt 80 ]; then
+    bar_color=$(printf '\033[33m')
   else
-    bar_color="\033[31m"
+    bar_color=$(printf '\033[31m')
   fi
 
   bar_width=10
@@ -159,13 +150,12 @@ else
     token_part=""
   fi
 
-  ctx_part="${bar_color}[${bar}]${reset} ${bar_color}${used_int}%%${reset}${token_part}"
+  ctx_part="${bar_color}[${bar}]${reset} ${bar_color}${used_int}%${reset}${token_part}"
 fi
 
 # ── Usage (session + reset + weekly) ─────────────────────────────────────────
 _pct_color() {
   pct="$1"
-  # Compare as float: <50 green, <80 yellow, else red
   echo "$pct" | awk -v g="$green" -v y="$yellow" -v r="$red" \
     '{if($1+0<50) printf g; else if($1+0<80) printf y; else printf r}'
 }
@@ -185,6 +175,5 @@ if [ -n "$session_pct" ] || [ -n "$weekly_pct" ]; then
   fi
 fi
 
-# ── Final output ─────────────────────────────────────────────────────────────
-# Use the format string for ctx_part (contains %%) then append usage_part with %s
-printf "${branch_part}${model_part} | ${ctx_part}%s" "$usage_part"
+# ── Final output — printf '%s' avoids format string injection from variable content
+printf '%s' "${branch_part}${model_part} | ${ctx_part}${usage_part}"

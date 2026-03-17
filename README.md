@@ -29,7 +29,7 @@ main (3) | claude-sonnet-4-6 | [███░░░░░░░] 34% (68k/200k) |
 | < 50% | 🟢 Green |
 | 50–79% | 🟡 Yellow |
 | ≥ 80% | 🔴 Red |
-| Reset timer | 🟣 Magenta |
+| Reset countdown | 🟣 Magenta |
 
 ---
 
