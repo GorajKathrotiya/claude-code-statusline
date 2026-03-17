@@ -1,0 +1,18 @@
+{
+  "name": "GorajKathrotiya",
+  "owner": {
+    "name": "Goraj Kathrotiya"
+  },
+  "metadata": {
+    "description": "Claude Code statusline with session %, weekly limit, and reset countdown",
+    "homepage": "https://github.com/GorajKathrotiya/claude-code-statusline"
+  },
+  "plugins": [
+    {
+      "name": "claude-code-statusline",
+      "version": "1.0.0",
+      "source": "./skill",
+      "description": "Zero-dependency statusline showing model, git branch, context bar, session %, reset countdown, and weekly % — pure shell, no npm"
+    }
+  ]
+}

@@ -46,6 +46,17 @@ main (3) | claude-sonnet-4-6 | [███░░░░░░░] 34% (68k/200k) |
 
 ## Installation
 
+### Option 0 — Plugin marketplace (easiest)
+
+```
+/plugin marketplace add GorajKathrotiya/claude-code-statusline
+/plugin install claude-code-statusline
+```
+
+Then type `/statusline` and Claude sets everything up automatically.
+
+---
+
 ### Option A — Claude Skill (recommended)
 
 **Via skill directory (no build needed):**
