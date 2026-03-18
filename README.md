@@ -161,7 +161,7 @@ brew install jq
 
 ---
 
-## Customisation
+## Customization
 
 All display logic is in `statusline-command.sh` — it's plain shell, easy to edit.
 
