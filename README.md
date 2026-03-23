@@ -231,6 +231,8 @@ All behavior is configurable via environment variables — no script editing nee
 | `CLAUDE_STATUSLINE_HIDE_MODEL` | `0` | `1` = hide model name + plan badge |
 | `CLAUDE_STATUSLINE_HIDE_CONTEXT` | `0` | `1` = hide context window bar |
 | `CLAUDE_STATUSLINE_HIDE_USAGE` | `0` | `1` = hide session %, reset, weekly % |
+| `CLAUDE_STATUSLINE_HIDE_MODEL_SPLIT` | `0` | `1` = hide per-model Opus/Sonnet split |
+| `CLAUDE_STATUSLINE_HIDE_COST` | `0` | `1` = hide extra usage cost |
 
 ### Appearance
 
@@ -239,6 +241,31 @@ All behavior is configurable via environment variables — no script editing nee
 | `CLAUDE_STATUSLINE_BAR_WIDTH` | `10` | Context bar width in characters |
 | `CLAUDE_STATUSLINE_WARN_PCT` | `50` | % threshold where bar turns yellow |
 | `CLAUDE_STATUSLINE_CRIT_PCT` | `80` | % threshold where bar turns red |
+
+### Pet emoticon
+
+An optional pet icon that reflects your session mood (green/yellow/red based on session usage).
+
+| Variable | Default | What it does |
+|---|---|---|
+| `CLAUDE_STATUSLINE_PET` | `0` | `1` = show pet emoticon |
+| `CLAUDE_STATUSLINE_PET_TYPE` | `cat` | Pet icon: `cat`, `dog`, `squirrel`, `fish`, `mouse`, `parrot`, `octopus`, `unicorn` |
+
+| Pet type | Icon |
+|---|---|
+| `cat` | 🐱 |
+| `dog` | 🐶 |
+| `squirrel` | 🐿️ |
+| `fish` | 🐟 |
+| `mouse` | 🐭 |
+| `parrot` | 🦜 |
+| `octopus` | 🐙 |
+| `unicorn` | 🦄 |
+
+Example with pet enabled:
+```json
+"command": "CLAUDE_STATUSLINE_PET=1 CLAUDE_STATUSLINE_PET_TYPE=squirrel bash ~/.claude/statusline-command.sh"
+```
 
 ### Caching
 
