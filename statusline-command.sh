@@ -13,13 +13,71 @@ magenta=$(printf '\033[35m')
 dim=$(printf '\033[2m')
 reset=$(printf '\033[0m')
 
+# ── OS detection ─────────────────────────────────────────────────────────────
+os=$(uname -s)
+
+# ── Portable file mtime (seconds since epoch) ────────────────────────────────
+_file_mtime() {
+  if [ "$os" = "Darwin" ]; then
+    stat -f %m "$1" 2>/dev/null || echo 0
+  else
+    stat -c %Y "$1" 2>/dev/null || echo 0
+  fi
+}
+
+# ── Portable ISO-8601 timestamp → epoch ──────────────────────────────────────
+_iso_to_epoch() {
+  ts="$1"
+  if [ "$os" = "Darwin" ]; then
+    ts_clean=$(echo "$ts" \
+      | sed 's/\.[0-9]*//' \
+      | sed 's/+\([0-9][0-9]\):\([0-9][0-9]\)$/+\1\2/' \
+      | sed 's/Z$/+0000/')
+    date -j -f "%Y-%m-%dT%H:%M:%S%z" "$ts_clean" +%s 2>/dev/null
+  else
+    # GNU date accepts ISO-8601 directly
+    date -d "$ts" +%s 2>/dev/null
+  fi
+}
+
+# ── OAuth token: keychain (macOS) or credential file (Linux) ─────────────────
+_read_token() {
+  if [ "$os" = "Darwin" ]; then
+    security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
+      | jq -r '.claudeAiOauth.accessToken // .accessToken // empty' 2>/dev/null
+    return
+  fi
+
+  # Linux: try secret-tool (libsecret / GNOME keyring / KWallet bridge)
+  if command -v secret-tool >/dev/null 2>&1; then
+    _st=$(secret-tool lookup service "Claude Code-credentials" 2>/dev/null)
+    if [ -n "$_st" ]; then
+      echo "$_st" \
+        | jq -r '.claudeAiOauth.accessToken // .accessToken // empty' 2>/dev/null
+      return
+    fi
+  fi
+
+  # Linux fallback: read from credential files Claude Code may write
+  for _f in \
+    "$HOME/.config/Claude/claude_code_credentials.json" \
+    "$HOME/.config/claude-code/credentials.json" \
+    "$HOME/.claude/credentials.json"
+  do
+    if [ -f "$_f" ]; then
+      jq -r '.claudeAiOauth.accessToken // .accessToken // empty' "$_f" 2>/dev/null
+      return
+    fi
+  done
+}
+
 # ── Usage API (5-hour session + 7-day weekly) ────────────────────────────────
 CACHE_FILE="$HOME/.claude/.usage_cache.json"
 CACHE_TTL=180  # seconds
 
 _fetch_usage() {
   if [ -f "$CACHE_FILE" ]; then
-    cache_mtime=$(stat -f %m "$CACHE_FILE" 2>/dev/null || echo 0)
+    cache_mtime=$(_file_mtime "$CACHE_FILE")
     now=$(date +%s)
     age=$(( now - cache_mtime ))
     if [ "$age" -lt "$CACHE_TTL" ]; then
@@ -28,8 +86,7 @@ _fetch_usage() {
     fi
   fi
 
-  token=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
-    | jq -r '.claudeAiOauth.accessToken // .accessToken // empty' 2>/dev/null)
+  token=$(_read_token)
 
   if [ -z "$token" ]; then
     [ -f "$CACHE_FILE" ] && cat "$CACHE_FILE"
@@ -61,9 +118,24 @@ if [ -n "$usage_data" ]; then
   session_raw=$(echo "$usage_data" | jq -r '.five_hour.utilization // empty')
   weekly_raw=$(echo "$usage_data"  | jq -r '.seven_day.utilization // empty')
   session_reset_at=$(echo "$usage_data" | jq -r '.five_hour.resets_at // empty')
-  plan_tier=$(echo "$usage_data" | jq -r \
-    '.plan // .plan_tier // .plan_name // .subscription_type // .tier // empty' 2>/dev/null \
-    | tr '[:upper:]' '[:lower:]')
+  # API doesn't expose a plan field directly — infer from quota structure:
+  #   seven_day_opus non-null  → Max (has Opus quota)
+  #   seven_day_cowork non-null → Team
+  #   authenticated + sonnet   → Pro (baseline)
+  # CLAUDE_PLAN env var overrides all inference.
+  if [ -n "$CLAUDE_PLAN" ]; then
+    plan_tier=$(echo "$CLAUDE_PLAN" | tr '[:upper:]' '[:lower:]')
+  else
+    _opus=$(echo "$usage_data" | jq -r '.seven_day_opus // empty')
+    _cowork=$(echo "$usage_data" | jq -r '.seven_day_cowork // empty')
+    if [ -n "$_opus" ]; then
+      plan_tier="max"
+    elif [ -n "$_cowork" ]; then
+      plan_tier="team"
+    else
+      plan_tier="pro"
+    fi
+  fi
 
   if [ -n "$session_raw" ]; then
     session_pct=$(echo "$session_raw" | awk '{v=$1+0; if(v>100)v=100; printf "%.1f", v}')
@@ -72,16 +144,11 @@ if [ -n "$usage_data" ]; then
     weekly_pct=$(echo "$weekly_raw" | awk '{v=$1+0; if(v>100)v=100; printf "%.1f", v}')
   fi
 
-  # Format reset countdown (macOS date)
+  # Format reset countdown (portable via _iso_to_epoch)
   _fmt_reset() {
     ts="$1"
     [ -z "$ts" ] && return
-    # Strip sub-seconds, normalize +HH:MM → +HHMM for macOS date -j
-    ts_clean=$(echo "$ts" \
-      | sed 's/\.[0-9]*//' \
-      | sed 's/+\([0-9][0-9]\):\([0-9][0-9]\)$/+\1\2/' \
-      | sed 's/Z$/+0000/')
-    reset_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S%z" "$ts_clean" +%s 2>/dev/null)
+    reset_epoch=$(_iso_to_epoch "$ts")
     [ -z "$reset_epoch" ] && return
     now_epoch=$(date +%s)
     diff=$(( reset_epoch - now_epoch ))
