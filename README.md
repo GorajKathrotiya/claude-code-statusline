@@ -1,9 +1,37 @@
 # claude-code-statusline
 
+[![CI](https://github.com/GorajKathrotiya/claude-code-statusline/actions/workflows/ci.yml/badge.svg)](https://github.com/GorajKathrotiya/claude-code-statusline/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform: macOS | Linux | WSL](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20WSL-brightgreen.svg)](#platform-support)
+[![Shell: POSIX sh](https://img.shields.io/badge/Shell-POSIX%20sh-lightgrey.svg)](statusline-command.sh)
+
 A zero-dependency Claude Code statusline that shows **model**, **git branch**, **context window usage**, **session %**, **reset countdown**, and **weekly %** — all in your terminal, without any third-party tools.
+
+### Quick install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/GorajKathrotiya/claude-code-statusline/main/install.sh | sh
+```
+
+### What it looks like
 
 ```
 main (3) | claude-sonnet-4-6 | [███░░░░░░░] 34% (68k/200k) | Session: 22.0% | Reset: 2h1m | Weekly: 7.0%
+```
+
+**Minimal mode** (context + model only):
+```
+claude-sonnet-4-6 (Pro) | [███░░░░░░░] 34% (68k/200k)
+```
+
+**High usage** (bar turns red at 80%+):
+```
+main | claude-opus-4-6 (Max) | [█████████░] 92% (460k/500k) | Session: 85.2% | Reset: 43m | Weekly: 61.0%
+```
+
+**1M context window**:
+```
+main | claude-opus-4-6 (Max) | [█░░░░░░░░░] 9% (90k/1M) | Session: 12.0% | Reset: 4h22m | Weekly: 3.5%
 ```
 
 > **Inspired by** [ccstatusline](https://github.com/sirmalloc/ccstatusline) — but with zero npm, zero installs, pure shell.
@@ -46,7 +74,17 @@ main (3) | claude-sonnet-4-6 | [███░░░░░░░] 34% (68k/200k) |
 
 ## Installation
 
-### Option 0 — Plugin marketplace (easiest)
+### One-liner (fastest)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/GorajKathrotiya/claude-code-statusline/main/install.sh | sh
+```
+
+Downloads the script, updates `settings.json`, and verifies it works — all in one command.
+
+---
+
+### Option 0 — Plugin marketplace
 
 ```
 /plugin marketplace add GorajKathrotiya/claude-code-statusline

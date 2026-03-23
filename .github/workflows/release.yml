@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get install -y jq zip shellcheck
+
+      - name: Lint
+        run: shellcheck -s sh statusline-command.sh
+
+      - name: Run tests
+        run: sh tests/run_tests.sh
+
+      - name: Build .skill file
+        run: make build
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: v${{ steps.version.outputs.version }}
+          body: |
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+
+            ## Install
+
+            **One-liner:**
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | sh
+            ```
+
+            **Or download the `.skill` file** below and run:
+            ```bash
+            claude skills install ./statusline.skill
+            ```
+          files: statusline.skill
+          generate_release_notes: true
