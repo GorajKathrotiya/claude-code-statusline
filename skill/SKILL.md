@@ -1,6 +1,6 @@
 ---
 name: statusline
-description: Sets up a Claude Code statusline showing model, git branch, context window bar, session usage %, reset countdown, and weekly usage % — without any third-party tools. Works on macOS, Linux, and WSL. Uses Anthropic's OAuth usage API (free, no tokens consumed) with a configurable local cache. Use when a teammate asks to set up the statusline, add session/weekly usage to their statusline, or runs /statusline.
+description: Sets up a Claude Code statusline showing model, git branch, context window bar, session usage %, reset countdown, weekly usage %, per-model usage split (Opus/Sonnet), and cost tracking — without any third-party tools. Works on macOS, Linux, and WSL. Uses Anthropic's OAuth usage API (free, no tokens consumed) with a configurable local cache. Use when a teammate asks to set up the statusline, add session/weekly usage to their statusline, or runs /statusline.
 ---
 
 # Statusline Setup
@@ -9,7 +9,7 @@ Installs `~/.claude/statusline-command.sh` and wires it into `~/.claude/settings
 
 **What it shows:**
 ```
-main (3) | claude-sonnet-4-6 (Pro) | [████░░░░░░] 42% (8400/200000) | Session: 22.0% | Reset: 2h17m | Weekly: 7.0%
+main (3) | claude-sonnet-4-6 (Pro) | [████░░░░░░] 42% (84k/200k) | Session: 22.0% | Reset: 2h17m | Weekly: 7.0% | [Sonnet:4%] | Cost: $0
 ```
 
 - **Branch** (yellow) + uncommitted file count
@@ -18,6 +18,8 @@ main (3) | claude-sonnet-4-6 (Pro) | [████░░░░░░] 42% (8400/
 - **Session %** — 5-hour block utilization, color-coded
 - **Reset** — countdown to 5-hour block reset (magenta)
 - **Weekly %** — 7-day utilization, color-coded
+- **Model split** — per-model 7-day usage (Opus/Sonnet), color-coded
+- **Cost** — extra usage spend, green/$0, yellow/any spend, red/>=75% of limit
 - **Stale indicator** (`*`) — shown when cached data is older than 10 minutes
 
 **Requirements:** `jq` installed. Works on macOS, Linux, and WSL. Claude Code Pro/Max/Team (OAuth login) needed for usage stats; context bar and model work for all users.

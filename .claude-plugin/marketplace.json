@@ -10,9 +10,9 @@
   "plugins": [
     {
       "name": "claude-code-statusline",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "source": "./skill",
-      "description": "Zero-dependency statusline showing model, git branch, context bar, session %, reset countdown, and weekly % — pure shell, cross-platform (macOS/Linux/WSL), fully configurable via env vars"
+      "description": "Zero-dependency statusline showing model, git branch, context bar, session %, reset countdown, weekly %, per-model usage split, and cost tracking — pure shell, cross-platform (macOS/Linux/WSL), fully configurable via env vars"
     }
   ]
 }

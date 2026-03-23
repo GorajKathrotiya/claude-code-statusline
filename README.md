@@ -5,7 +5,7 @@
 [![Platform: macOS | Linux | WSL](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20WSL-brightgreen.svg)](#platform-support)
 [![Shell: POSIX sh](https://img.shields.io/badge/Shell-POSIX%20sh-lightgrey.svg)](statusline-command.sh)
 
-A zero-dependency Claude Code statusline that shows **model**, **git branch**, **context window usage**, **session %**, **reset countdown**, and **weekly %** — all in your terminal, without any third-party tools.
+A zero-dependency Claude Code statusline that shows **model**, **git branch**, **context window usage**, **session %**, **reset countdown**, **weekly %**, **per-model usage split**, and **cost tracking** — all in your terminal, without any third-party tools.
 
 ### Quick install
 
@@ -16,7 +16,12 @@ curl -fsSL https://raw.githubusercontent.com/GorajKathrotiya/claude-code-statusl
 ### What it looks like
 
 ```
-main (3) | claude-sonnet-4-6 (Pro) | [███░░░░░░░] 34% (68k/200k) | Session: 22.0% | Reset: 2h1m | Weekly: 7.0%
+main (3) | claude-sonnet-4-6 (Pro) | [███░░░░░░░] 34% (68k/200k) | Session: 22.0% | Reset: 2h1m | Weekly: 7.0% | [Sonnet:4%] | Cost: $0
+```
+
+**Max plan with Opus + Sonnet split and cost tracking:**
+```
+main | claude-opus-4-6 (Max) | [██████░░░░] 65% (650k/1M) | Session: 45.0% | Reset: 2h1m | Weekly: 62.0% | [Opus:30% Sonnet:55%] | Cost: $18.50/$100
 ```
 
 **Minimal mode** (context + model only):
@@ -27,11 +32,6 @@ claude-sonnet-4-6 (Pro) | [███░░░░░░░] 34% (68k/200k)
 **High usage** (bar turns red at 80%+):
 ```
 main | claude-opus-4-6 (Max) | [█████████░] 92% (460k/500k) | Session: 85.2% | Reset: 43m | Weekly: 61.0%
-```
-
-**1M context window**:
-```
-main | claude-opus-4-6 (Max) | [█░░░░░░░░░] 9% (90k/1M) | Session: 12.0% | Reset: 4h22m | Weekly: 3.5%
 ```
 
 > **Inspired by** [ccstatusline](https://github.com/sirmalloc/ccstatusline) — but with zero npm, zero installs, pure shell.
@@ -50,6 +50,8 @@ main | claude-opus-4-6 (Max) | [█░░░░░░░░░] 9% (90k/1M) | Se
 | `Session: 22.0%` | 5-hour block utilization — color-coded |
 | `Reset: 2h1m` | Countdown to 5-hour block reset (magenta) |
 | `Weekly: 7.0%` | 7-day utilization — color-coded |
+| `[Opus:30% Sonnet:55%]` | Per-model 7-day usage split — color-coded |
+| `Cost: $18.50/$100` | Extra usage spend / monthly limit — green/yellow/red |
 | `*` | Stale cache indicator (dimmed, shown when cache > 10 min old) |
 
 ### Color coding
@@ -60,6 +62,9 @@ main | claude-opus-4-6 (Max) | [█░░░░░░░░░] 9% (90k/1M) | Se
 | 50–79% | Yellow |
 | >= 80% | Red |
 | Reset countdown | Magenta |
+| Cost: $0 | Green |
+| Cost: any spend | Yellow |
+| Cost: >= 75% of limit | Red |
 
 ---
 
@@ -138,10 +143,10 @@ After installing the skill or plugin, type `/statusline` in Claude Code. It will
 
 #### Full (default)
 
-Shows everything — git branch, model, plan badge, context bar, session %, reset countdown, weekly %.
+Shows everything — git branch, model, plan badge, context bar, session %, reset countdown, weekly %, per-model split, and cost.
 
 ```
-main (3) | claude-sonnet-4-6 (Pro) | [███░░░░░░░] 34% (68k/200k) | Session: 22.0% | Reset: 2h1m | Weekly: 7.0%
+main (3) | claude-sonnet-4-6 (Pro) | [███░░░░░░░] 34% (68k/200k) | Session: 22.0% | Reset: 2h1m | Weekly: 7.0% | [Sonnet:4%] | Cost: $0
 ```
 
 #### Minimal
@@ -289,6 +294,8 @@ Claude Code → pipes JSON → statusline-command.sh → prints formatted string
    - Response cached to `~/.claude/.usage_cache.json` (3 minutes by default)
    - Falls back to stale cache on network failure — statusline never breaks
    - Stale indicator (`*`) shown when cache is older than 10 minutes
+3. **Per-model split** — Opus and Sonnet 7-day usage parsed from `seven_day_opus` / `seven_day_sonnet` fields
+4. **Cost tracking** — Extra usage spend from `extra_usage.used_credits` with optional monthly limit display
 
 ---
 

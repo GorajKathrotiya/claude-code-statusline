@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-03-23
+
+### Added
+- Per-model usage split: shows Opus and Sonnet 7-day usage individually (`[Opus:30% Sonnet:55%]`)
+- Cost tracking: shows extra usage spend from the API (`Cost: $18.50/$100`)
+  - Green when $0, yellow when any spend, red when >= 75% of monthly limit
+  - Shows spend/limit when a monthly limit is set, otherwise just spend
+
 ## [1.1.0] - 2026-03-23
 
 ### Added
