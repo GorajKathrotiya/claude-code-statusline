@@ -213,13 +213,13 @@ out=$(printf '%s' "$minimal_json" | CLAUDE_STATUSLINE_BAR_WIDTH=5 CLAUDE_STATUSL
 clean=$(printf '%s' "$out" | strip_ansi)
 # Extract content between [ and ] — the bar characters
 bar=$(printf '%s' "$clean" | sed 's/.*\[//' | sed 's/\].*//')
-bar_len=$(printf '%s' "$bar" | wc -m | tr -d ' ')
+bar_len=$(printf '%s' "$bar" | LC_ALL=en_US.UTF-8 wc -m | tr -d ' ')
 assert_equals "$bar_len" "5" "bar width is 5 characters"
 
 out=$(printf '%s' "$minimal_json" | CLAUDE_STATUSLINE_BAR_WIDTH=20 CLAUDE_STATUSLINE_HIDE_USAGE=1 sh "$SCRIPT" 2>/dev/null)
 clean=$(printf '%s' "$out" | strip_ansi)
 bar=$(printf '%s' "$clean" | sed 's/.*\[//' | sed 's/\].*//')
-bar_len=$(printf '%s' "$bar" | wc -m | tr -d ' ')
+bar_len=$(printf '%s' "$bar" | LC_ALL=en_US.UTF-8 wc -m | tr -d ' ')
 assert_equals "$bar_len" "20" "bar width is 20 characters"
 
 # ── 9. Custom color thresholds ───────────────────────────────────────────────
@@ -257,10 +257,19 @@ assert_contains "$clean" "500k" "Max plan defaults to 500k window"
 # ── 11. Git branch display ──────────────────────────────────────────────────
 printf '\n11. Git branch display\n'
 
-git_json='{"model":{"display_name":"claude-sonnet-4-6"},"cwd":"'"$ROOT_DIR"'","context_window":{"used_percentage":35,"current_usage":{"input_tokens":7000},"context_window_size":200000}}'
-out=$(printf '%s' "$git_json" | CLAUDE_STATUSLINE_HIDE_USAGE=1 sh "$SCRIPT" 2>/dev/null)
-clean=$(printf '%s' "$out" | strip_ansi)
-assert_contains "$clean" "main" "shows branch name for git repo"
+# Get the actual branch name (may differ in CI vs local)
+current_branch=$(git -C "$ROOT_DIR" symbolic-ref --short HEAD 2>/dev/null)
+if [ -n "$current_branch" ]; then
+  git_json='{"model":{"display_name":"claude-sonnet-4-6"},"cwd":"'"$ROOT_DIR"'","context_window":{"used_percentage":35,"current_usage":{"input_tokens":7000},"context_window_size":200000}}'
+  out=$(printf '%s' "$git_json" | CLAUDE_STATUSLINE_HIDE_USAGE=1 sh "$SCRIPT" 2>/dev/null)
+  clean=$(printf '%s' "$out" | strip_ansi)
+  assert_contains "$clean" "$current_branch" "shows branch name for git repo"
+else
+  # CI detached HEAD — skip branch name test, just verify no crash
+  git_json='{"model":{"display_name":"claude-sonnet-4-6"},"cwd":"'"$ROOT_DIR"'","context_window":{"used_percentage":35,"current_usage":{"input_tokens":7000},"context_window_size":200000}}'
+  out=$(printf '%s' "$git_json" | CLAUDE_STATUSLINE_HIDE_USAGE=1 sh "$SCRIPT" 2>/dev/null)
+  assert_not_empty "$out" "produces output in detached HEAD (no branch)"
+fi
 
 out=$(printf '%s' "$minimal_json" | CLAUDE_STATUSLINE_HIDE_USAGE=1 sh "$SCRIPT" 2>/dev/null)
 assert_not_empty "$out" "produces output for non-git cwd"
