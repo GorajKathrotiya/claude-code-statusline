@@ -55,11 +55,15 @@ usage_data=$(_fetch_usage 2>/dev/null)
 session_pct=""
 weekly_pct=""
 session_reset_part=""
+plan_tier=""
 
 if [ -n "$usage_data" ]; then
   session_raw=$(echo "$usage_data" | jq -r '.five_hour.utilization // empty')
   weekly_raw=$(echo "$usage_data"  | jq -r '.seven_day.utilization // empty')
   session_reset_at=$(echo "$usage_data" | jq -r '.five_hour.resets_at // empty')
+  plan_tier=$(echo "$usage_data" | jq -r \
+    '.plan // .plan_tier // .plan_name // .subscription_type // .tier // empty' 2>/dev/null \
+    | tr '[:upper:]' '[:lower:]')
 
   if [ -n "$session_raw" ]; then
     session_pct=$(echo "$session_raw" | awk '{v=$1+0; if(v>100)v=100; printf "%.1f", v}')
@@ -110,11 +114,37 @@ else
   branch_part=""
 fi
 
+# ── Plan badge ───────────────────────────────────────────────────────────────
+case "$plan_tier" in
+  *max*)        plan_badge="Max" ;;
+  *pro*)        plan_badge="Pro" ;;
+  *team*)       plan_badge="Team" ;;
+  *enterprise*) plan_badge="Ent" ;;
+  *)            plan_badge="" ;;
+esac
+
+if [ -n "$plan_badge" ]; then
+  model_part="${cyan}${model}${reset} ${dim}(${plan_badge})${reset}"
+else
+  model_part="${cyan}${model}${reset}"
+fi
+
 # ── Context window ───────────────────────────────────────────────────────────
 used=$(echo "$input"        | jq -r '.context_window.used_percentage // empty')
 window_size=$(echo "$input" | jq -r '.context_window.context_window_size // empty')
 
-model_part="${cyan}${model}${reset}"
+# When Claude Code does not report context_window_size, fall back to plan-based
+# default. Override anytime with CLAUDE_CONTEXT_WINDOW_SIZE=<tokens>.
+if [ -z "$window_size" ]; then
+  if [ -n "$CLAUDE_CONTEXT_WINDOW_SIZE" ]; then
+    window_size="$CLAUDE_CONTEXT_WINDOW_SIZE"
+  else
+    case "$plan_badge" in
+      Max)  window_size=500000 ;;
+      *)    window_size=200000 ;;
+    esac
+  fi
+fi
 
 # ── Context bar (thresholds: <50 green, <80 yellow, ≥80 red) ────────────────
 if [ -z "$used" ]; then
