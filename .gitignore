@@ -1,2 +1,6 @@
 statusline.skill
 dist/
+.DS_Store
+*.swp
+*.swo
+*~

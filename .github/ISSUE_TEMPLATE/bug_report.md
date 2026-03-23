@@ -21,6 +21,9 @@ echo '{"model":{"display_name":"claude-sonnet-4-6"},"cwd":"'$(pwd)'","context_wi
 Paste the output here.
 
 **Environment**
-- macOS version (`sw_vers`):
-- Claude Code plan: Pro / Max / Team / API key
+- OS: <!-- e.g. macOS 15.1, Ubuntu 24.04, WSL2 (Windows 11) -->
+- OS version (`uname -a`):
+- Claude Code plan: <!-- Pro / Max / Team / API key -->
 - `jq --version`:
+- Installation method: <!-- one-liner / plugin / skill / manual -->
+- Custom env vars (if any): <!-- e.g. CLAUDE_STATUSLINE_HIDE_GIT=1 -->
