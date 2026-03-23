@@ -233,6 +233,15 @@ if [ -n "$usage_data" ]; then
   if _is_cache_stale; then
     stale_marker=" ${dim}*${reset}"
   fi
+
+  # ── Extra usage / cost tracking ──────────────────────────────────────────
+  extra_credits=$(echo "$usage_data" | jq -r '.extra_usage.used_credits // empty')
+  extra_limit=$(echo "$usage_data" | jq -r '.extra_usage.monthly_limit // empty')
+  extra_enabled=$(echo "$usage_data" | jq -r '.extra_usage.is_enabled // empty')
+
+  # ── Per-model usage split (Opus / Sonnet) ────────────────────────────────
+  opus_pct=$(echo "$usage_data" | jq -r '.seven_day_opus.utilization // empty')
+  sonnet_pct=$(echo "$usage_data" | jq -r '.seven_day_sonnet.utilization // empty')
 fi
 
 # ── Model name ───────────────────────────────────────────────────────────────
@@ -350,6 +359,45 @@ if [ "$HIDE_USAGE" != "1" ] && { [ -n "$session_pct" ] || [ -n "$weekly_pct" ]; 
     wc=$(_pct_color "$weekly_pct")
     usage_part="${usage_part} | Weekly: ${wc}${weekly_pct}%${reset}"
   fi
+  # Per-model split (show when available)
+  model_split=""
+  if [ -n "$opus_pct" ]; then
+    _oc=$(_pct_color "$opus_pct")
+    opus_fmt=$(echo "$opus_pct" | awk '{v=$1+0; if(v>100)v=100; printf "%.0f", v}')
+    model_split="${model_split}Opus:${_oc}${opus_fmt}%${reset}"
+  fi
+  if [ -n "$sonnet_pct" ]; then
+    _snc=$(_pct_color "$sonnet_pct")
+    sonnet_fmt=$(echo "$sonnet_pct" | awk '{v=$1+0; if(v>100)v=100; printf "%.0f", v}')
+    [ -n "$model_split" ] && model_split="${model_split} "
+    model_split="${model_split}Sonnet:${_snc}${sonnet_fmt}%${reset}"
+  fi
+  if [ -n "$model_split" ]; then
+    usage_part="${usage_part} | ${dim}[${reset}${model_split}${dim}]${reset}"
+  fi
+
+  # Extra usage cost (show when enabled and credits > 0)
+  if [ "$extra_enabled" = "true" ] && [ -n "$extra_credits" ]; then
+    cost_val=$(echo "$extra_credits" | awk '{if($1+0>0) printf "$%.2f", $1+0; else printf "$0"}')
+    if [ -n "$extra_limit" ] && [ "$extra_limit" != "null" ]; then
+      limit_val=$(echo "$extra_limit" | awk '{printf "$%.0f", $1+0}')
+      cost_display="${cost_val}/${limit_val}"
+    else
+      cost_display="${cost_val}"
+    fi
+    if echo "$extra_credits" | awk '{exit ($1+0 > 0) ? 0 : 1}'; then
+      if [ -n "$extra_limit" ] && [ "$extra_limit" != "null" ]; then
+        cost_color=$(echo "$extra_credits $extra_limit" | awk -v y="$yellow" -v r="$red" \
+          '{if($2+0>0 && ($1/$2)*100>=75) printf r; else printf y}')
+      else
+        cost_color="$yellow"
+      fi
+    else
+      cost_color="$green"
+    fi
+    usage_part="${usage_part} | Cost: ${cost_color}${cost_display}${reset}"
+  fi
+
   # Append stale marker if cache is old
   usage_part="${usage_part}${stale_marker}"
 fi
