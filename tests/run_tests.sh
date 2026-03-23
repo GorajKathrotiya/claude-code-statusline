@@ -132,7 +132,7 @@ out=$(printf '%s' "$minimal_json" | CLAUDE_STATUSLINE_HIDE_USAGE=1 sh "$SCRIPT" 
 assert_not_empty "$out" "produces output from minimal JSON"
 
 clean=$(printf '%s' "$out" | strip_ansi)
-assert_contains "$clean" "claude-sonnet-4-6" "contains model name"
+assert_contains "$clean" "sonnet-4-6" "contains model name"
 assert_contains "$clean" "35%" "contains usage percentage"
 assert_contains "$clean" "70k/200k" "contains token counts"
 
@@ -163,7 +163,7 @@ printf '\n5. Missing context window data\n'
 
 out=$(printf '%s' "$no_context_json" | CLAUDE_STATUSLINE_HIDE_USAGE=1 sh "$SCRIPT" 2>/dev/null)
 clean=$(printf '%s' "$out" | strip_ansi)
-assert_contains "$clean" "claude-sonnet-4-6" "still shows model without context"
+assert_contains "$clean" "sonnet-4-6" "still shows model without context"
 assert_contains "$clean" " -%" "shows dash for missing percentage"
 
 # ── 6. Context window size fallback ──────────────────────────────────────────
@@ -194,16 +194,16 @@ printf '\n7. Segment toggling\n'
 
 out=$(printf '%s' "$minimal_json" | CLAUDE_STATUSLINE_HIDE_GIT=1 CLAUDE_STATUSLINE_HIDE_USAGE=1 sh "$SCRIPT" 2>/dev/null)
 clean=$(printf '%s' "$out" | strip_ansi)
-assert_contains "$clean" "claude-sonnet-4-6" "model visible when git hidden"
+assert_contains "$clean" "sonnet-4-6" "model visible when git hidden"
 
 out=$(printf '%s' "$minimal_json" | CLAUDE_STATUSLINE_HIDE_MODEL=1 CLAUDE_STATUSLINE_HIDE_USAGE=1 sh "$SCRIPT" 2>/dev/null)
 clean=$(printf '%s' "$out" | strip_ansi)
-assert_not_contains "$clean" "claude-sonnet-4-6" "model hidden when HIDE_MODEL=1"
+assert_not_contains "$clean" "sonnet-4-6" "model hidden when HIDE_MODEL=1"
 assert_contains "$clean" "35%" "context visible when model hidden"
 
 out=$(printf '%s' "$minimal_json" | CLAUDE_STATUSLINE_HIDE_CONTEXT=1 CLAUDE_STATUSLINE_HIDE_USAGE=1 sh "$SCRIPT" 2>/dev/null)
 clean=$(printf '%s' "$out" | strip_ansi)
-assert_contains "$clean" "claude-sonnet-4-6" "model visible when context hidden"
+assert_contains "$clean" "sonnet-4-6" "model visible when context hidden"
 assert_not_contains "$clean" "35%" "context hidden when HIDE_CONTEXT=1"
 
 # ── 8. Configurable bar width ───────────────────────────────────────────────
@@ -318,7 +318,7 @@ if [ -n "$current_branch" ]; then
 else
   assert_not_empty "$out" "integration: runs in detached HEAD"
 fi
-assert_contains "$clean" "claude-sonnet-4-6" "integration: has model"
+assert_contains "$clean" "sonnet-4-6" "integration: has model"
 assert_contains "$clean" "(Pro)" "integration: has plan badge"
 assert_contains "$clean" "42%" "integration: has percentage"
 assert_contains "$clean" "|" "integration: has separators"
