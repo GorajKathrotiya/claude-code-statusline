@@ -8,25 +8,52 @@ on:
 
 jobs:
   shellcheck:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - name: Install shellcheck
-        run: sudo apt-get install -y shellcheck
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get install -y shellcheck
+          else
+            brew install shellcheck
+          fi
       - name: Lint statusline-command.sh
         run: shellcheck -s sh statusline-command.sh
-      - name: Lint skill asset
-        run: shellcheck -s sh skill/assets/statusline-command.sh
 
-  scripts-in-sync:
+  symlink-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check root and skill asset are identical
+      - name: Verify skill asset is a symlink to root script
         run: |
-          if ! diff -q statusline-command.sh skill/assets/statusline-command.sh; then
-            echo "❌ statusline-command.sh and skill/assets/statusline-command.sh are out of sync"
-            diff statusline-command.sh skill/assets/statusline-command.sh
+          if [ ! -L skill/assets/statusline-command.sh ]; then
+            echo "skill/assets/statusline-command.sh must be a symlink"
             exit 1
           fi
-          echo "✅ Scripts are in sync"
+          target=$(readlink skill/assets/statusline-command.sh)
+          if [ "$target" != "../../statusline-command.sh" ]; then
+            echo "Symlink target is '$target', expected '../../statusline-command.sh'"
+            exit 1
+          fi
+          echo "Symlink is correct"
+
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get install -y jq
+          else
+            brew install jq
+          fi
+      - name: Run tests
+        run: sh tests/run_tests.sh

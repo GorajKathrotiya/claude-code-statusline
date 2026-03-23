@@ -1,8 +1,29 @@
 #!/bin/sh
+# claude-code-statusline — universal, zero-dependency statusline for Claude Code
+# Works on macOS, Linux, and WSL.
+# Required: jq  |  Optional: curl (usage stats), git (branch display)
+
+# ── Dependency check ─────────────────────────────────────────────────────────
+command -v jq >/dev/null 2>&1 || { printf 'statusline: jq required'; exit 0; }
+
 input=$(cat)
 
 # Exit early if input is empty or not valid JSON
+[ -z "$input" ] && exit 0
 echo "$input" | jq empty 2>/dev/null || exit 0
+
+# ── Configurable thresholds via env vars ─────────────────────────────────────
+CACHE_TTL="${CLAUDE_STATUSLINE_CACHE_TTL:-180}"       # seconds
+BAR_WIDTH="${CLAUDE_STATUSLINE_BAR_WIDTH:-10}"         # characters
+WARN_PCT="${CLAUDE_STATUSLINE_WARN_PCT:-50}"           # green → yellow
+CRIT_PCT="${CLAUDE_STATUSLINE_CRIT_PCT:-80}"           # yellow → red
+STALE_TTL="${CLAUDE_STATUSLINE_STALE_TTL:-600}"        # seconds before showing stale indicator
+
+# Segment toggles (set to 1 to hide)
+HIDE_GIT="${CLAUDE_STATUSLINE_HIDE_GIT:-0}"
+HIDE_USAGE="${CLAUDE_STATUSLINE_HIDE_USAGE:-0}"
+HIDE_CONTEXT="${CLAUDE_STATUSLINE_HIDE_CONTEXT:-0}"
+HIDE_MODEL="${CLAUDE_STATUSLINE_HIDE_MODEL:-0}"
 
 # Colors — real ESC bytes via printf, safe in any output context
 cyan=$(printf '\033[36m')
@@ -15,6 +36,12 @@ reset=$(printf '\033[0m')
 
 # ── OS detection ─────────────────────────────────────────────────────────────
 os=$(uname -s)
+is_wsl=0
+if [ "$os" = "Linux" ] && [ -f /proc/version ]; then
+  case $(cat /proc/version) in
+    *[Mm]icrosoft*) is_wsl=1 ;;
+  esac
+fi
 
 # ── Portable file mtime (seconds since epoch) ────────────────────────────────
 _file_mtime() {
@@ -29,23 +56,40 @@ _file_mtime() {
 _iso_to_epoch() {
   ts="$1"
   if [ "$os" = "Darwin" ]; then
+    # Strip fractional seconds, normalize timezone for macOS date
     ts_clean=$(echo "$ts" \
       | sed 's/\.[0-9]*//' \
       | sed 's/+\([0-9][0-9]\):\([0-9][0-9]\)$/+\1\2/' \
       | sed 's/Z$/+0000/')
     date -j -f "%Y-%m-%dT%H:%M:%S%z" "$ts_clean" +%s 2>/dev/null
   else
-    # GNU date accepts ISO-8601 directly
+    # GNU date handles ISO-8601 natively
     date -d "$ts" +%s 2>/dev/null
   fi
 }
 
-# ── OAuth token: keychain (macOS) or credential file (Linux) ─────────────────
+# ── OAuth token: keychain (macOS) / secret-tool (Linux) / config files ───────
 _read_token() {
   if [ "$os" = "Darwin" ]; then
     security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
       | jq -r '.claudeAiOauth.accessToken // .accessToken // empty' 2>/dev/null
     return
+  fi
+
+  # WSL: try reading from Windows-side Claude Code credential files
+  if [ "$is_wsl" = "1" ]; then
+    _win_appdata=$(wslpath "$(cmd.exe /C "echo %APPDATA%" 2>/dev/null | tr -d '\r')" 2>/dev/null)
+    if [ -n "$_win_appdata" ]; then
+      for _wf in \
+        "$_win_appdata/Claude/claude_code_credentials.json" \
+        "$_win_appdata/claude-code/credentials.json"
+      do
+        if [ -f "$_wf" ]; then
+          jq -r '.claudeAiOauth.accessToken // .accessToken // empty' "$_wf" 2>/dev/null
+          return
+        fi
+      done
+    fi
   fi
 
   # Linux: try secret-tool (libsecret / GNOME keyring / KWallet bridge)
@@ -58,7 +102,7 @@ _read_token() {
     fi
   fi
 
-  # Linux fallback: read from credential files Claude Code may write
+  # Linux/WSL fallback: read from credential files Claude Code may write
   for _f in \
     "$HOME/.config/Claude/claude_code_credentials.json" \
     "$HOME/.config/claude-code/credentials.json" \
@@ -73,12 +117,12 @@ _read_token() {
 
 # ── Usage API (5-hour session + 7-day weekly) ────────────────────────────────
 CACHE_FILE="$HOME/.claude/.usage_cache.json"
-CACHE_TTL=180  # seconds
 
 _fetch_usage() {
+  now=$(date +%s)
+
   if [ -f "$CACHE_FILE" ]; then
     cache_mtime=$(_file_mtime "$CACHE_FILE")
-    now=$(date +%s)
     age=$(( now - cache_mtime ))
     if [ "$age" -lt "$CACHE_TTL" ]; then
       cat "$CACHE_FILE"
@@ -89,6 +133,12 @@ _fetch_usage() {
   token=$(_read_token)
 
   if [ -z "$token" ]; then
+    [ -f "$CACHE_FILE" ] && cat "$CACHE_FILE"
+    return 1
+  fi
+
+  # curl is optional — skip API call if not available
+  if ! command -v curl >/dev/null 2>&1; then
     [ -f "$CACHE_FILE" ] && cat "$CACHE_FILE"
     return 1
   fi
@@ -107,35 +157,54 @@ _fetch_usage() {
   fi
 }
 
-usage_data=$(_fetch_usage 2>/dev/null)
+# ── Stale cache detection ────────────────────────────────────────────────────
+_is_cache_stale() {
+  [ -f "$CACHE_FILE" ] || return 1
+  cache_mtime=$(_file_mtime "$CACHE_FILE")
+  now=$(date +%s)
+  age=$(( now - cache_mtime ))
+  [ "$age" -ge "$STALE_TTL" ]
+}
+
+# ── Color helper for percentages ─────────────────────────────────────────────
+_pct_color() {
+  pct="$1"
+  echo "$pct" | awk -v g="$green" -v y="$yellow" -v r="$red" \
+    -v wp="$WARN_PCT" -v cp="$CRIT_PCT" \
+    '{if($1+0<wp) printf g; else if($1+0<cp) printf y; else printf r}'
+}
+
+# ── Fetch usage data ─────────────────────────────────────────────────────────
+usage_data=""
+if [ "$HIDE_USAGE" != "1" ]; then
+  usage_data=$(_fetch_usage 2>/dev/null)
+fi
 
 session_pct=""
 weekly_pct=""
 session_reset_part=""
 plan_tier=""
+stale_marker=""
+
+# Plan tier: CLAUDE_PLAN env var takes priority, then infer from API response
+if [ -n "$CLAUDE_PLAN" ]; then
+  plan_tier=$(echo "$CLAUDE_PLAN" | tr '[:upper:]' '[:lower:]')
+elif [ -n "$usage_data" ]; then
+  _opus=$(echo "$usage_data" | jq -r '.seven_day_opus // empty')
+  _cowork=$(echo "$usage_data" | jq -r '.seven_day_cowork // empty')
+  if [ -n "$_opus" ]; then
+    plan_tier="max"
+  elif [ -n "$_cowork" ]; then
+    plan_tier="team"
+  else
+    plan_tier="pro"
+  fi
+fi
 
 if [ -n "$usage_data" ]; then
   session_raw=$(echo "$usage_data" | jq -r '.five_hour.utilization // empty')
   weekly_raw=$(echo "$usage_data"  | jq -r '.seven_day.utilization // empty')
   session_reset_at=$(echo "$usage_data" | jq -r '.five_hour.resets_at // empty')
-  # API doesn't expose a plan field directly — infer from quota structure:
-  #   seven_day_opus non-null  → Max (has Opus quota)
-  #   seven_day_cowork non-null → Team
-  #   authenticated + sonnet   → Pro (baseline)
-  # CLAUDE_PLAN env var overrides all inference.
-  if [ -n "$CLAUDE_PLAN" ]; then
-    plan_tier=$(echo "$CLAUDE_PLAN" | tr '[:upper:]' '[:lower:]')
-  else
-    _opus=$(echo "$usage_data" | jq -r '.seven_day_opus // empty')
-    _cowork=$(echo "$usage_data" | jq -r '.seven_day_cowork // empty')
-    if [ -n "$_opus" ]; then
-      plan_tier="max"
-    elif [ -n "$_cowork" ]; then
-      plan_tier="team"
-    else
-      plan_tier="pro"
-    fi
-  fi
 
   if [ -n "$session_raw" ]; then
     session_pct=$(echo "$session_raw" | awk '{v=$1+0; if(v>100)v=100; printf "%.1f", v}')
@@ -144,7 +213,7 @@ if [ -n "$usage_data" ]; then
     weekly_pct=$(echo "$weekly_raw" | awk '{v=$1+0; if(v>100)v=100; printf "%.1f", v}')
   fi
 
-  # Format reset countdown (portable via _iso_to_epoch)
+  # Format reset countdown
   _fmt_reset() {
     ts="$1"
     [ -z "$ts" ] && return
@@ -159,26 +228,31 @@ if [ -n "$usage_data" ]; then
   }
 
   [ -n "$session_reset_at" ] && session_reset_part=$(_fmt_reset "$session_reset_at")
+
+  # Stale cache indicator
+  if _is_cache_stale; then
+    stale_marker=" ${dim}*${reset}"
+  fi
 fi
 
 # ── Model name ───────────────────────────────────────────────────────────────
 model=$(echo "$input" | jq -r '.model.display_name // "Unknown Model"')
 
-# ── Git branch + change count ────────────────────────────────────────────────
+# ── Git branch + change count (optional — skipped if git not available) ──────
 cwd=$(echo "$input" | jq -r '.cwd // empty')
 branch=""
-if [ -n "$cwd" ] && [ -d "$cwd" ]; then
+branch_part=""
+if [ "$HIDE_GIT" != "1" ] && [ -n "$cwd" ] && [ -d "$cwd" ] && command -v git >/dev/null 2>&1; then
   branch=$(git -C "$cwd" --no-optional-locks symbolic-ref --short HEAD 2>/dev/null)
   change_count=$(git -C "$cwd" --no-optional-locks status --porcelain 2>/dev/null | wc -l | tr -d ' ')
-fi
-if [ -n "$branch" ]; then
-  if [ -n "$change_count" ] && [ "$change_count" -gt 0 ]; then
-    branch_part="${yellow}${branch} (${change_count})${reset} | "
-  else
-    branch_part="${yellow}${branch}${reset} | "
+
+  if [ -n "$branch" ]; then
+    if [ -n "$change_count" ] && [ "$change_count" -gt 0 ]; then
+      branch_part="${yellow}${branch} (${change_count})${reset} | "
+    else
+      branch_part="${yellow}${branch}${reset} | "
+    fi
   fi
-else
-  branch_part=""
 fi
 
 # ── Plan badge ───────────────────────────────────────────────────────────────
@@ -190,18 +264,20 @@ case "$plan_tier" in
   *)            plan_badge="" ;;
 esac
 
-if [ -n "$plan_badge" ]; then
-  model_part="${cyan}${model}${reset} ${dim}(${plan_badge})${reset}"
-else
-  model_part="${cyan}${model}${reset}"
+model_part=""
+if [ "$HIDE_MODEL" != "1" ]; then
+  if [ -n "$plan_badge" ]; then
+    model_part="${cyan}${model}${reset} ${dim}(${plan_badge})${reset}"
+  else
+    model_part="${cyan}${model}${reset}"
+  fi
 fi
 
 # ── Context window ───────────────────────────────────────────────────────────
 used=$(echo "$input"        | jq -r '.context_window.used_percentage // empty')
 window_size=$(echo "$input" | jq -r '.context_window.context_window_size // empty')
 
-# When Claude Code does not report context_window_size, fall back to plan-based
-# default. Override anytime with CLAUDE_CONTEXT_WINDOW_SIZE=<tokens>.
+# Fallback: env var → plan-based default
 if [ -z "$window_size" ]; then
   if [ -n "$CLAUDE_CONTEXT_WINDOW_SIZE" ]; then
     window_size="$CLAUDE_CONTEXT_WINDOW_SIZE"
@@ -213,52 +289,56 @@ if [ -z "$window_size" ]; then
   fi
 fi
 
-# ── Context bar (thresholds: <50 green, <80 yellow, ≥80 red) ────────────────
-if [ -z "$used" ]; then
-  ctx_part="[----------] -%"
-else
-  used_int=$(printf "%.0f" "$used")
-
-  if [ "$used_int" -lt 50 ]; then
-    bar_color=$(printf '\033[32m')
-  elif [ "$used_int" -lt 80 ]; then
-    bar_color=$(printf '\033[33m')
+# ── Context bar ──────────────────────────────────────────────────────────────
+ctx_part=""
+if [ "$HIDE_CONTEXT" != "1" ]; then
+  if [ -z "$used" ]; then
+    # Build empty bar dynamically based on BAR_WIDTH
+    empty_bar=""
+    i=0
+    while [ "$i" -lt "$BAR_WIDTH" ]; do empty_bar="${empty_bar}-"; i=$(( i + 1 )); done
+    ctx_part="[${empty_bar}] -%"
   else
-    bar_color=$(printf '\033[31m')
+    used_int=$(printf "%.0f" "$used")
+
+    if [ "$used_int" -lt "$WARN_PCT" ]; then
+      bar_color="$green"
+    elif [ "$used_int" -lt "$CRIT_PCT" ]; then
+      bar_color="$yellow"
+    else
+      bar_color="$red"
+    fi
+
+    filled=$(( used_int * BAR_WIDTH / 100 ))
+    empty=$(( BAR_WIDTH - filled ))
+
+    bar=""
+    i=0
+    while [ "$i" -lt "$filled" ]; do bar="${bar}█"; i=$(( i + 1 )); done
+    i=0
+    while [ "$i" -lt "$empty" ]; do bar="${bar}░"; i=$(( i + 1 )); done
+
+    if [ -n "$window_size" ]; then
+      token_part=$(awk -v p="$used_int" -v w="$window_size" 'BEGIN{
+        u=p*w/100
+        if(u>=1000000) uf=sprintf("%.1fM",u/1000000); else uf=sprintf("%dk",u/1000)
+        if(w>=1000000) wf=sprintf("%.1fM",w/1000000); else wf=sprintf("%dk",w/1000)
+        # Clean up trailing .0 on M values (1.0M → 1M)
+        gsub(/\.0M/,"M",uf); gsub(/\.0M/,"M",wf)
+        printf "(%s/%s)", uf, wf
+      }')
+      token_part=" ${dim}${token_part}${reset}"
+    else
+      token_part=""
+    fi
+
+    ctx_part="${bar_color}[${bar}]${reset} ${bar_color}${used_int}%${reset}${token_part}"
   fi
-
-  bar_width=10
-  filled=$(( used_int * bar_width / 100 ))
-  empty=$(( bar_width - filled ))
-
-  bar=""
-  i=0
-  while [ "$i" -lt "$filled" ]; do bar="${bar}█"; i=$(( i + 1 )); done
-  i=0
-  while [ "$i" -lt "$empty" ]; do bar="${bar}░"; i=$(( i + 1 )); done
-
-  if [ -n "$window_size" ]; then
-    token_part=$(awk -v p="$used_int" -v w="$window_size" 'BEGIN{
-      u=p*w/100
-      printf "(%dk/%dk)", u/1000, w/1000
-    }')
-    token_part=" ${dim}${token_part}${reset}"
-  else
-    token_part=""
-  fi
-
-  ctx_part="${bar_color}[${bar}]${reset} ${bar_color}${used_int}%${reset}${token_part}"
 fi
 
 # ── Usage (session + reset + weekly) ─────────────────────────────────────────
-_pct_color() {
-  pct="$1"
-  echo "$pct" | awk -v g="$green" -v y="$yellow" -v r="$red" \
-    '{if($1+0<50) printf g; else if($1+0<80) printf y; else printf r}'
-}
-
 usage_part=""
-if [ -n "$session_pct" ] || [ -n "$weekly_pct" ]; then
+if [ "$HIDE_USAGE" != "1" ] && { [ -n "$session_pct" ] || [ -n "$weekly_pct" ]; }; then
   if [ -n "$session_pct" ]; then
     sc=$(_pct_color "$session_pct")
     usage_part="${usage_part} | Session: ${sc}${session_pct}%${reset}"
@@ -270,7 +350,21 @@ if [ -n "$session_pct" ] || [ -n "$weekly_pct" ]; then
     wc=$(_pct_color "$weekly_pct")
     usage_part="${usage_part} | Weekly: ${wc}${weekly_pct}%${reset}"
   fi
+  # Append stale marker if cache is old
+  usage_part="${usage_part}${stale_marker}"
 fi
 
-# ── Final output — printf '%s' avoids format string injection from variable content
-printf '%s' "${branch_part}${model_part} | ${ctx_part}${usage_part}"
+# ── Assemble output ──────────────────────────────────────────────────────────
+output=""
+[ -n "$branch_part" ] && output="${output}${branch_part}"
+if [ -n "$model_part" ] && [ -n "$ctx_part" ]; then
+  output="${output}${model_part} | ${ctx_part}"
+elif [ -n "$model_part" ]; then
+  output="${output}${model_part}"
+elif [ -n "$ctx_part" ]; then
+  output="${output}${ctx_part}"
+fi
+output="${output}${usage_part}"
+
+# printf '%s' avoids format string injection from variable content
+printf '%s' "$output"
