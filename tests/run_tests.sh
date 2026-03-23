@@ -209,17 +209,17 @@ assert_not_contains "$clean" "35%" "context hidden when HIDE_CONTEXT=1"
 # ── 8. Configurable bar width ───────────────────────────────────────────────
 printf '\n8. Configurable bar width\n'
 
-out=$(printf '%s' "$minimal_json" | CLAUDE_STATUSLINE_BAR_WIDTH=5 CLAUDE_STATUSLINE_HIDE_USAGE=1 sh "$SCRIPT" 2>/dev/null)
+# Use empty bar (ASCII dashes) for portable char counting across macOS/Linux
+out=$(printf '%s' "$no_context_json" | CLAUDE_STATUSLINE_BAR_WIDTH=5 CLAUDE_STATUSLINE_HIDE_USAGE=1 sh "$SCRIPT" 2>/dev/null)
 clean=$(printf '%s' "$out" | strip_ansi)
-# Extract content between [ and ] — the bar characters
 bar=$(printf '%s' "$clean" | sed 's/.*\[//' | sed 's/\].*//')
-bar_len=$(printf '%s' "$bar" | LC_ALL=C.UTF-8 wc -m | tr -d ' ')
+bar_len=$(printf '%s' "$bar" | awk '{print length}')
 assert_equals "$bar_len" "5" "bar width is 5 characters"
 
-out=$(printf '%s' "$minimal_json" | CLAUDE_STATUSLINE_BAR_WIDTH=20 CLAUDE_STATUSLINE_HIDE_USAGE=1 sh "$SCRIPT" 2>/dev/null)
+out=$(printf '%s' "$no_context_json" | CLAUDE_STATUSLINE_BAR_WIDTH=20 CLAUDE_STATUSLINE_HIDE_USAGE=1 sh "$SCRIPT" 2>/dev/null)
 clean=$(printf '%s' "$out" | strip_ansi)
 bar=$(printf '%s' "$clean" | sed 's/.*\[//' | sed 's/\].*//')
-bar_len=$(printf '%s' "$bar" | LC_ALL=C.UTF-8 wc -m | tr -d ' ')
+bar_len=$(printf '%s' "$bar" | awk '{print length}')
 assert_equals "$bar_len" "20" "bar width is 20 characters"
 
 # ── 9. Custom color thresholds ───────────────────────────────────────────────
@@ -258,7 +258,8 @@ assert_contains "$clean" "500k" "Max plan defaults to 500k window"
 printf '\n11. Git branch display\n'
 
 # Get the actual branch name (may differ in CI vs local)
-current_branch=$(git -C "$ROOT_DIR" symbolic-ref --short HEAD 2>/dev/null)
+# Use || true to prevent set -e from killing the script in detached HEAD
+current_branch=$(git -C "$ROOT_DIR" symbolic-ref --short HEAD 2>/dev/null || true)
 if [ -n "$current_branch" ]; then
   git_json='{"model":{"display_name":"claude-sonnet-4-6"},"cwd":"'"$ROOT_DIR"'","context_window":{"used_percentage":35,"current_usage":{"input_tokens":7000},"context_window_size":200000}}'
   out=$(printf '%s' "$git_json" | CLAUDE_STATUSLINE_HIDE_USAGE=1 sh "$SCRIPT" 2>/dev/null)
