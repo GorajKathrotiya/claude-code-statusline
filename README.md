@@ -242,9 +242,9 @@ All behavior is configurable via environment variables — no script editing nee
 | `CLAUDE_STATUSLINE_WARN_PCT` | `50` | % threshold where bar turns yellow |
 | `CLAUDE_STATUSLINE_CRIT_PCT` | `80` | % threshold where bar turns red |
 
-### Pet emoticon
+### Pet emoticon (optional, off by default)
 
-An optional pet icon that reflects your session mood (green/yellow/red based on session usage).
+An optional pet icon that reflects your session mood (green/yellow/red based on session usage). Disabled by default — set `CLAUDE_STATUSLINE_PET=1` to enable.
 
 | Variable | Default | What it does |
 |---|---|---|
