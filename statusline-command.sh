@@ -24,6 +24,13 @@ HIDE_GIT="${CLAUDE_STATUSLINE_HIDE_GIT:-0}"
 HIDE_USAGE="${CLAUDE_STATUSLINE_HIDE_USAGE:-0}"
 HIDE_CONTEXT="${CLAUDE_STATUSLINE_HIDE_CONTEXT:-0}"
 HIDE_MODEL="${CLAUDE_STATUSLINE_HIDE_MODEL:-0}"
+HIDE_MODEL_SPLIT="${CLAUDE_STATUSLINE_HIDE_MODEL_SPLIT:-0}"
+HIDE_COST="${CLAUDE_STATUSLINE_HIDE_COST:-0}"
+
+# Pet (set to 1 to enable — off by default)
+SHOW_PET="${CLAUDE_STATUSLINE_PET:-0}"
+# Pet type: cat (default), dog, squirrel, fish, mouse, parrot, octopus, unicorn
+PET_TYPE="${CLAUDE_STATUSLINE_PET_TYPE:-cat}"
 
 # Colors — real ESC bytes via printf, safe in any output context
 cyan=$(printf '\033[36m')
@@ -244,8 +251,9 @@ if [ -n "$usage_data" ]; then
   sonnet_pct=$(echo "$usage_data" | jq -r '.seven_day_sonnet.utilization // empty')
 fi
 
-# ── Model name ───────────────────────────────────────────────────────────────
-model=$(echo "$input" | jq -r '.model.display_name // "Unknown Model"')
+# ── Model name (strip redundant context size — already shown in the bar) ──────
+model_raw=$(echo "$input" | jq -r '.model.display_name // "Unknown Model"')
+model=$(echo "$model_raw" | sed 's/ ([0-9.]*[KMkm] context)//' | sed 's/^claude-//')
 
 # ── Git branch + change count (optional — skipped if git not available) ──────
 cwd=$(echo "$input" | jq -r '.cwd // empty')
@@ -359,14 +367,14 @@ if [ "$HIDE_USAGE" != "1" ] && { [ -n "$session_pct" ] || [ -n "$weekly_pct" ]; 
     wc=$(_pct_color "$weekly_pct")
     usage_part="${usage_part} | Weekly: ${wc}${weekly_pct}%${reset}"
   fi
-  # Per-model split (show when available)
+  # Per-model split (show when available and not hidden)
   model_split=""
-  if [ -n "$opus_pct" ]; then
+  if [ "$HIDE_MODEL_SPLIT" != "1" ] && [ -n "$opus_pct" ]; then
     _oc=$(_pct_color "$opus_pct")
     opus_fmt=$(echo "$opus_pct" | awk '{v=$1+0; if(v>100)v=100; printf "%.0f", v}')
     model_split="${model_split}Opus:${_oc}${opus_fmt}%${reset}"
   fi
-  if [ -n "$sonnet_pct" ]; then
+  if [ "$HIDE_MODEL_SPLIT" != "1" ] && [ -n "$sonnet_pct" ]; then
     _snc=$(_pct_color "$sonnet_pct")
     sonnet_fmt=$(echo "$sonnet_pct" | awk '{v=$1+0; if(v>100)v=100; printf "%.0f", v}')
     [ -n "$model_split" ] && model_split="${model_split} "
@@ -376,8 +384,8 @@ if [ "$HIDE_USAGE" != "1" ] && { [ -n "$session_pct" ] || [ -n "$weekly_pct" ]; 
     usage_part="${usage_part} | ${dim}[${reset}${model_split}${dim}]${reset}"
   fi
 
-  # Extra usage cost (show when enabled and credits > 0)
-  if [ "$extra_enabled" = "true" ] && [ -n "$extra_credits" ]; then
+  # Extra usage cost (show when enabled, not hidden, and credits available)
+  if [ "$HIDE_COST" != "1" ] && [ "$extra_enabled" = "true" ] && [ -n "$extra_credits" ]; then
     cost_val=$(echo "$extra_credits" | awk '{if($1+0>0) printf "$%.2f", $1+0; else printf "$0"}')
     if [ -n "$extra_limit" ] && [ "$extra_limit" != "null" ]; then
       limit_val=$(echo "$extra_limit" | awk '{printf "$%.0f", $1+0}')
@@ -402,6 +410,38 @@ if [ "$HIDE_USAGE" != "1" ] && { [ -n "$session_pct" ] || [ -n "$weekly_pct" ]; 
   usage_part="${usage_part}${stale_marker}"
 fi
 
+# ── Pet (optional animated companion) ─────────────────────────────────────────
+pet_part=""
+if [ "$SHOW_PET" = "1" ]; then
+  # Pick pet color based on session usage (mood)
+  if [ -n "$session_pct" ]; then
+    pet_mood=$(echo "$session_pct" | awk -v wp="$WARN_PCT" -v cp="$CRIT_PCT" \
+      '{if($1+0<wp) print "happy"; else if($1+0<cp) print "busy"; else print "stressed"}')
+  else
+    pet_mood="happy"
+  fi
+
+  case "$pet_mood" in
+    happy)    pet_color="$cyan" ;;
+    busy)     pet_color="$yellow" ;;
+    stressed) pet_color="$red" ;;
+  esac
+
+  # Pick emoticon based on pet type
+  case "$PET_TYPE" in
+    dog)      pet_icon="🐶" ;;
+    squirrel) pet_icon="🐿️"  ;;
+    fish)     pet_icon="🐟" ;;
+    mouse)    pet_icon="🐭" ;;
+    parrot)   pet_icon="🦜" ;;
+    octopus)  pet_icon="🐙" ;;
+    unicorn)  pet_icon="🦄" ;;
+    *)        pet_icon="🐱" ;; # cat (default)
+  esac
+
+  pet_part=" | ${pet_color}${pet_icon}${reset}"
+fi
+
 # ── Assemble output ──────────────────────────────────────────────────────────
 output=""
 [ -n "$branch_part" ] && output="${output}${branch_part}"
@@ -412,7 +452,7 @@ elif [ -n "$model_part" ]; then
 elif [ -n "$ctx_part" ]; then
   output="${output}${ctx_part}"
 fi
-output="${output}${usage_part}"
+output="${output}${usage_part}${pet_part}"
 
 # printf '%s' avoids format string injection from variable content
 printf '%s' "$output"
