@@ -124,6 +124,7 @@ _read_token() {
 
 # ── Usage API (5-hour session + 7-day weekly) ────────────────────────────────
 CACHE_FILE="$HOME/.claude/.usage_cache.json"
+COST_BASELINE_FILE="$HOME/.claude/.cost_baseline.json"
 
 _fetch_usage() {
   now=$(date +%s)
@@ -162,6 +163,38 @@ _fetch_usage() {
   else
     [ -f "$CACHE_FILE" ] && cat "$CACHE_FILE"
   fi
+}
+
+# ── Session cost baseline ────────────────────────────────────────────────────
+# Stores the used_credits value at session start so we can show the delta.
+# A "session" resets if the baseline file is older than 6 hours or missing.
+SESSION_COST_TTL="${CLAUDE_STATUSLINE_SESSION_COST_TTL:-21600}"  # 6h default
+
+_session_cost() {
+  current_credits="$1"
+  [ -z "$current_credits" ] && echo "" && return
+
+  now=$(date +%s)
+  baseline_credits=""
+
+  if [ -f "$COST_BASELINE_FILE" ]; then
+    baseline_mtime=$(_file_mtime "$COST_BASELINE_FILE")
+    age=$(( now - baseline_mtime ))
+    if [ "$age" -lt "$SESSION_COST_TTL" ]; then
+      baseline_credits=$(cat "$COST_BASELINE_FILE")
+    fi
+  fi
+
+  # No baseline or expired — set it now
+  if [ -z "$baseline_credits" ]; then
+    mkdir -p "$(dirname "$COST_BASELINE_FILE")"
+    echo "$current_credits" > "$COST_BASELINE_FILE"
+    echo "0"
+    return
+  fi
+
+  # Compute delta
+  echo "$current_credits $baseline_credits" | awk '{d=$1-$2; if(d<0)d=0; printf "%.2f", d}'
 }
 
 # ── Stale cache detection ────────────────────────────────────────────────────
@@ -384,26 +417,27 @@ if [ "$HIDE_USAGE" != "1" ] && { [ -n "$session_pct" ] || [ -n "$weekly_pct" ]; 
     usage_part="${usage_part} | ${dim}[${reset}${model_split}${dim}]${reset}"
   fi
 
-  # Extra usage cost (show when enabled, not hidden, and credits available)
+  # Extra usage cost — shows session delta (how much spent since session start)
   if [ "$HIDE_COST" != "1" ] && [ "$extra_enabled" = "true" ] && [ -n "$extra_credits" ]; then
-    cost_val=$(echo "$extra_credits" | awk '{if($1+0>0) printf "$%.2f", $1+0; else printf "$0"}')
-    if [ -n "$extra_limit" ] && [ "$extra_limit" != "null" ]; then
-      limit_val=$(echo "$extra_limit" | awk '{printf "$%.0f", $1+0}')
-      cost_display="${cost_val}/${limit_val}"
-    else
-      cost_display="${cost_val}"
-    fi
-    if echo "$extra_credits" | awk '{exit ($1+0 > 0) ? 0 : 1}'; then
+    session_cost=$(_session_cost "$extra_credits")
+    # Only show cost segment if there's actual session spend
+    if [ -n "$session_cost" ] && echo "$session_cost" | awk '{exit ($1+0 > 0) ? 0 : 1}'; then
+      cost_val=$(printf '$%.2f' "$session_cost")
+      if [ -n "$extra_limit" ] && [ "$extra_limit" != "null" ]; then
+        total_val=$(echo "$extra_credits" | awk '{printf "$%.2f", $1+0}')
+        limit_val=$(echo "$extra_limit" | awk '{printf "$%.0f", $1+0}')
+        cost_display="${cost_val} (${total_val}/${limit_val})"
+      else
+        cost_display="${cost_val}"
+      fi
       if [ -n "$extra_limit" ] && [ "$extra_limit" != "null" ]; then
         cost_color=$(echo "$extra_credits $extra_limit" | awk -v y="$yellow" -v r="$red" \
           '{if($2+0>0 && ($1/$2)*100>=75) printf r; else printf y}')
       else
         cost_color="$yellow"
       fi
-    else
-      cost_color="$green"
+      usage_part="${usage_part} | Cost: ${cost_color}${cost_display}${reset}"
     fi
-    usage_part="${usage_part} | Cost: ${cost_color}${cost_display}${reset}"
   fi
 
   # Append stale marker if cache is old
